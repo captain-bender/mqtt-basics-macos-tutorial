@@ -163,6 +163,7 @@ The config file is in:
 mosquitto/mosquitto.conf
 ```
 
+The provided one is a template. You can rename it and create a new one with just 2 lines of code as it is the following (example [mosquitto.conf](./mosquitto.conf)):
 It contains:
 
 ```conf
