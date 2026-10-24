@@ -522,7 +522,27 @@ So far, anyone who can reach port 1883 can read and send any message. In this
 section, the broker refuses clients that do not log in, and an **access
 control list (ACL)** decides which topics each user may use.
 
-Stop the broker from section 7 (`Ctrl + C` in its window) before you start.
+**Before you start, stop the open broker.** Only one broker can use port 1883.
+Go to the broker window from section 7 and press `Ctrl + C`. The last line it
+prints should be:
+
+```text
+... mosquitto version 2.0.x terminating
+```
+
+Then check that nothing is still using port 1883:
+
+```bash
+lsof -nP -iTCP:1883 -sTCP:LISTEN
+```
+
+This should print **nothing**. If it still shows `mosquitto` (for example
+because you closed the broker window), see section 16.7.
+
+> **Why this matters:** if the old broker keeps running, the secure broker
+> fails to start (`Address already in use`), but your scripts still connect to
+> the old, **open** broker. Everything seems to work without a password, and it
+> looks as if the security settings do nothing.
 
 ### 15.1 Create a password file
 
@@ -576,6 +596,9 @@ Start the broker with the secure configuration, from the project folder:
 ```bash
 mosquitto -c mosquitto/mosquitto_secure.conf -v
 ```
+
+Check that the log says `Config loaded from mosquitto/mosquitto_secure.conf.`
+and ends with `running`.
 
 Now run `python src/subscriber.py`. Because it does not log in yet, you see:
 
@@ -693,6 +716,25 @@ client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="...")
 ```
 
 and the new callback arguments shown in the example scripts.
+
+### 16.7 I closed the broker window (or lost it) and cannot see the log
+
+First check the **Window** menu in Terminal: it lists every open window and
+tab, and the broker may just be hidden behind another one.
+
+If the window is really gone, the broker may still be running in the
+background. You cannot get its log back, so stop it and start a new one:
+
+```bash
+lsof -nP -iTCP:1883 -sTCP:LISTEN   # is something still using port 1883?
+pkill mosquitto                    # stop the broker you started by hand
+brew services stop mosquitto       # only if Homebrew started it (section 16.3)
+lsof -nP -iTCP:1883 -sTCP:LISTEN   # should now print nothing
+```
+
+Then start the broker again from the project folder (section 7, or section
+15.3 for the secure broker). Restarting is harmless: retained messages are
+cleared, and the Python scripts reconnect on their own.
 
 ---
 
