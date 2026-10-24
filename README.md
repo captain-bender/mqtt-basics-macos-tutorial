@@ -9,9 +9,15 @@ This repo is a minimal, step-by-step tutorial for **macOS** that shows how to:
 4. Exchange basic messages between:
    - one **subscriber** (listening), and  
    - one **publisher** (sending messages).
-5. Experiment with **QoS levels** and **retained messages** in MQTT.
+5. Experiment with **QoS levels**, **retained messages** and the **Last Will and Testament (LWT)**.
+6. Protect the broker with **usernames, passwords** and an **access control list (ACL)**.
 
 This tutorial assumes **no prior MQTT experience** and only very basic Terminal familiarity.
+
+Written for Python 3.13, Eclipse Mosquitto 2.0 and paho-mqtt 2.1.
+The tutorial is written for macOS; section 17 lists the differences for Ubuntu.
+A Windows version is available at
+[mqtt-basics-windows-tutorial](https://github.com/captain-bender/mqtt-basics-windows-tutorial).
 
 ---
 
@@ -27,16 +33,17 @@ Open **Terminal** and run:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-After installation, follow any instructions Homebrew prints (e.g., adding it to your PATH).  
-Then verify:
+At the end, Homebrew prints a few **"Next steps"** commands that add it to your
+`PATH`. Copy and run them, then close and reopen Terminal. Verify:
 
 ```bash
 brew --version
 ```
 
-### 1.2. Install Python 3 (if needed)
+### 1.2. Install Python 3
 
-Many macOS systems already have Python 3, but you can also install it via Homebrew:
+macOS may already have a `python3`, but it is often an old version. Install a
+current one with Homebrew:
 
 ```bash
 brew install python
@@ -51,33 +58,57 @@ python3 --version
 You should see something like:
 
 ```text
-Python 3.11.x
+Python 3.13.x
 ```
+
+> On macOS the command is `python3`, not `python`. Once the virtual
+> environment is active (section 3), `python` works as well.
 
 ---
 
 ## 2. Clone or download this repository
 
-You can either:
+Terminal opens in your **home folder**. To keep things tidy, first create a
+folder for your coding projects and go into it:
+
+```bash
+mkdir -p ~/Projects
+cd ~/Projects
+```
+
+(`~` is short for your home folder, so this is `/Users/<your name>/Projects`.
+In Finder it appears inside your home folder, the one with the house icon.)
+
+> We avoid **Documents** and **Desktop** on purpose: macOS can sync them to
+> iCloud Drive, which copes badly with the thousands of small files in a
+> Python virtual environment.
+
+Then you can either:
 
 - **Clone with Git**:
 
-  ```bash
-  git clone https://github.com/captain-bender/mqtt-basics-macos-tutorial.git
-  cd mqtt-basics-macos-tutorial
-  ```
+```bash
+git clone https://github.com/captain-bender/mqtt-basics-macos-tutorial.git
+cd mqtt-basics-macos-tutorial
+```
 
 or
 
-- **Download as ZIP** from GitHub, unzip it, and then in Terminal `cd` into the unzipped folder.
+- **Download as ZIP** from GitHub, unzip it, move the
+  `mqtt-basics-macos-tutorial` folder into `Projects`, and then in Terminal run
+  `cd ~/Projects/mqtt-basics-macos-tutorial`.
 
-All the following commands assume you are inside the project folder.
+  If the unzipped folder is called `mqtt-basics-macos-tutorial-main`, rename it
+  to `mqtt-basics-macos-tutorial` first.
+
+All the following commands assume you are inside the project folder (the one that contains this `README.md`).
 
 ---
 
 ## 3. Create and activate a virtual environment (venv)
 
 A virtual environment keeps the Python packages for this project isolated.
+Please call the following command inside the project's folder.
 
 ### 3.1. Create the venv
 
@@ -87,7 +118,7 @@ python3 -m venv .venv
 
 This creates a folder called `.venv` in the current directory.
 
-### 3.2. Activate the venv (macOS / Linux style)
+### 3.2. Activate the venv (macOS)
 
 ```bash
 source .venv/bin/activate
@@ -96,7 +127,7 @@ source .venv/bin/activate
 If activation worked, your prompt should look similar to:
 
 ```text
-(.venv) your-mac:~/path/to/mqtt-macos-tutorial user$
+(.venv) user@MacBook mqtt-basics-macos-tutorial %
 ```
 
 Whenever you see `(.venv)` at the beginning of your prompt, it means the virtual environment is active.
@@ -125,90 +156,105 @@ You can verify:
 pip list
 ```
 
-You should see `paho-mqtt` in the list.
+You should see `paho-mqtt` with version **2.1 or newer**.
+If you see `1.6.1`, you are using an old environment: run `pip install --upgrade paho-mqtt`.
 
 ---
 
 ## 5. Install Eclipse Mosquitto MQTT broker (macOS via Homebrew)
 
-Install Mosquitto with Homebrew:
+Mosquitto is the **MQTT broker** (the "server" that routes messages between clients).
 
 ```bash
 brew install mosquitto
 ```
 
-After installation, check it’s available:
+This installs the broker (`mosquitto`) and the command-line tools
+`mosquitto_pub`, `mosquitto_sub` and `mosquitto_passwd`. Check that the broker
+is available:
 
 ```bash
 mosquitto -h
 ```
 
-You should see the help text.
+You should see the help text. If you see `command not found: mosquitto`, see
+section 16.2.
+
+> **Do not** run `brew services start mosquitto` for this tutorial. That starts
+> a second broker in the background, which takes port 1883 (section 16.3).
+> We run the broker by hand so you can see its log.
 
 ---
 
-## 6. Use the included Mosquitto config
+## 6. The broker configuration files
 
-From version 2.0 onward, Mosquitto is more restrictive by default.  
-To keep things simple for a local tutorial, this repo includes a minimal config file that:
+From version 2.0 onward, Mosquitto only accepts connections from the same
+computer unless a configuration file says otherwise. This repo includes two
+configuration files in the `mosquitto/` folder:
 
-- listens on port **1883** (the default MQTT port), and  
-- allows **anonymous** local connections.
+| File | Used in | What it does |
+|---|---|---|
+| `mosquitto.conf` | sections 7-14 | listens on port **1883** and allows **anonymous** clients |
+| `mosquitto_secure.conf` | section 15 | listens on port 1883 and requires a **username and password**, with an **ACL** |
 
-> **Important:** This is fine for a local tutorial, but **not recommended for production**.
-
-The config file is in:
-
-```text
-mosquitto/mosquitto.conf
-```
-
-The provided one is a template. You can rename it and create a new one with just 2 lines of code as it is the following (example [mosquitto.conf](./mosquitto.conf)):
-It contains:
+The first one contains just:
 
 ```conf
 listener 1883
 allow_anonymous true
 ```
 
+> **Important:** allowing anonymous clients is fine for a local tutorial,
+> but **not for any real system**. Section 15 shows how to lock the broker down.
+
 ---
 
 ## 7. Start the Mosquitto broker
 
-From the **project root** (same folder as `README.md`), run:
+Open a **new** Terminal window or tab (so it is separate from your Python venv)
+and go to the **project folder**, the one that contains `README.md`:
 
 ```bash
-mosquitto -c "$(pwd)/mosquitto/mosquitto.conf" -v
+cd ~/Projects/mqtt-basics-macos-tutorial
 ```
 
-Explanation:
+> If you put the project somewhere else, type `cd ` (with a space), drag the
+> project folder from Finder into the Terminal window, and press Return.
+
+Then start the broker with the tutorial's configuration file:
+
+```bash
+mosquitto -c mosquitto/mosquitto.conf -v
+```
 
 - `-c` tells Mosquitto which configuration file to use.
-- `-v` enables **verbose** logging so you can see connections and messages.
-- `$(pwd)` expands to the full path of the current directory.
+- `-v` enables **verbose** logging, so you can see every connection and message.
 
-You should now see Mosquitto output like:
+You should now see output like:
 
 ```text
-1710000000: mosquitto version x.x.x starting
-1710000000: Opening ipv4 listen socket on port 1883.
+... mosquitto version 2.0.x starting
+... Config loaded from mosquitto/mosquitto.conf.
+... Opening ipv4 listen socket on port 1883.
+... Opening ipv6 listen socket on port 1883.
+... mosquitto version 2.0.x running
 ```
 
-Leave this Terminal window **open**. The broker must keep running.
+Check that the second line names **this repo's** configuration file. Leave this
+window **open**: the broker must keep running.
+
+If you see `Error: Address already in use`, another broker is already running
+on port 1883: see section 16.3.
+
+> If the macOS firewall is turned on, it may ask whether `mosquitto` may
+> accept incoming network connections. You can click **Deny**: the tutorial
+> only uses connections from your own Mac (`localhost`), which still work.
 
 ---
 
 ## 8. Basic example: subscriber (listener)
 
-Open a **new Terminal** window or tab.  
-Go to the project folder and activate the venv:
-
-```bash
-cd /path/to/mqtt-macos-tutorial
-source .venv/bin/activate
-```
-
-Then run the subscriber:
+In the window where your virtual environment is active (`(.venv)`), from the project root run:
 
 ```bash
 python src/subscriber.py
@@ -218,21 +264,24 @@ You should see something like:
 
 ```text
 [SUBSCRIBER] Connecting to broker at localhost:1883...
-[SUBSCRIBER] Connected with result code 0
-[SUBSCRIBER] Subscribed to topic: test/topic
 Waiting for messages... Press Ctrl+C to exit.
+[SUBSCRIBER] Connected: Success
+[SUBSCRIBER] Subscribed to topic: test/topic
 ```
 
 Leave this running.
+
+> All the scripts read the broker address, port, username and password from
+> `src/mqtt_settings.py`. You only need to change that file in section 15.
 
 ---
 
 ## 9. Basic example: publisher (sender)
 
-Open **another Terminal** window or tab, go to the project folder, and activate the venv again:
+Open **another** Terminal window or tab, go to the project folder, and activate the virtual environment again:
 
 ```bash
-cd /path/to/mqtt-macos-tutorial
+cd ~/Projects/mqtt-basics-macos-tutorial
 source .venv/bin/activate
 python src/publisher.py
 ```
@@ -241,7 +290,7 @@ You should see:
 
 ```text
 [PUBLISHER] Connecting to broker at localhost:1883...
-[PUBLISHER] Connected with result code 0
+[PUBLISHER] Connected: Success
 [PUBLISHER] Publishing message 1: Hello MQTT! (#1)
 [PUBLISHER] Publishing message 2: Hello MQTT! (#2)
 ...
@@ -286,9 +335,10 @@ Expected output (simplified):
 
 ```text
 [QOS-SUB] Connecting to broker at localhost:1883...
-[QOS-SUB] Connected with result code 0
+[QOS-SUB] Connected: Success
 [QOS-SUB] Subscribed to test/+/qos with QoS 2
 [QOS-SUB] Subscribed to test/retained with QoS 2
+[QOS-SUB] Subscribed to test/status with QoS 2
 Waiting for messages... Press Ctrl+C to exit.
 ```
 
@@ -296,6 +346,7 @@ This subscriber listens on:
 
 - `test/+/qos`  → will match `test/0/qos`, `test/1/qos`, `test/2/qos`
 - `test/retained`
+- `test/status` (used in section 14)
 
 For every received message it prints:
 
@@ -322,6 +373,10 @@ Expected behaviour:
   - `test/retained` with QoS 1 and `retain=True`
 
 On the subscriber window you will see each message come in with its QoS, and you can check the `retained` flag in the output.
+
+Now look at the **broker window**. Because the broker runs with `-v`, it logs
+every packet it sends and receives. Compare the lines logged for the QoS 0,
+QoS 1 and QoS 2 messages: what is different, and why?
 
 ---
 
@@ -360,6 +415,16 @@ The output will say something like:
 That is the key idea of retained messages:  
 the broker keeps the **last retained message** on a topic and delivers it instantly to **new subscribers**.
 
+A retained message stays on the broker until it is replaced or deleted. To
+**delete** it, publish an empty retained message to the same topic:
+
+```bash
+mosquitto_pub -t test/retained -r -n
+```
+
+(`-r` = retained, `-n` = empty message.) Clearing old retained messages
+before a new test keeps the results easy to read.
+
 ---
 
 ## 12. Stopping everything
@@ -370,46 +435,11 @@ the broker keeps the **last retained message** on a topic and delivers it instan
 
 ---
 
-## 13. Troubleshooting
-
-**1. `ModuleNotFoundError: No module named 'paho'`**
-
-- Make sure your **virtual environment is activated** (`(.venv)` visible in the prompt).
-- Run:
-
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-**2. `Connection Refused` error in Python clients**
-
-- Check that Mosquitto is running and listening:
-  - Is the broker Terminal open with no obvious errors?
-  - Did you pass the correct path to `mosquitto.conf`?
-
-- Confirm the broker is listening on port 1883 with this config:
-  - `listener 1883`
-  - `allow_anonymous true`
-
-**3. Port 1883 already in use**
-
-- Maybe you have another MQTT broker or service using this port.
-- You can change the port number in `mosquitto/mosquitto.conf`, e.g.:
-
-  ```conf
-  listener 1884
-  allow_anonymous true
-  ```
-
-- Then update the Python scripts to use port `1884`.
-
----
-
-## 14. How this example works (in simple terms)
+## 13. How this example works (in simple terms)
 
 - The **Mosquitto broker** is the **middleman** that receives and routes messages.
 - The **subscriber** tells the broker:  
-  “I am interested in messages on topic `test/topic` (or similar).”
+  "I am interested in messages on topic `test/topic` (or similar)."
 - The **publisher** sends messages to the broker on that topic.
 - The broker forwards those messages to any client subscribed to that topic.
 
@@ -421,4 +451,269 @@ QoS levels change **how hard MQTT tries to deliver** a message:
 
 Retained messages let the broker remember the **last known value** for a topic and give it immediately to new subscribers.
 
-This pattern is called **publish/subscribe**, and it’s very popular in IoT and distributed systems.
+The **Last Will and Testament** is a message the client gives the broker when
+it connects. The broker publishes it for the client if the client disappears
+without disconnecting properly (section 14).
+
+This pattern is called **publish/subscribe**, and it's very popular in IoT and distributed systems.
+
+---
+
+## 14. Last Will and Testament (LWT)
+
+A client can leave a **will** with the broker when it connects. If the
+client later disappears without disconnecting properly (a crash, a power cut,
+a lost network), the broker publishes the will for it. Other clients can then
+tell that the client has gone.
+
+`src/lwt_publisher.py` sets the will before connecting:
+
+```python
+client.will_set("test/status", payload="offline (connection lost)", qos=1, retain=True)
+```
+
+It then publishes `online` on `test/status` and waits.
+
+### 14.1 Try it
+
+1. Start the QoS subscriber (it also listens to `test/status`):
+
+   ```bash
+   python src/qos_retained_subscriber.py
+   ```
+
+2. In another Terminal, start the LWT publisher:
+
+   ```bash
+   python src/lwt_publisher.py
+   ```
+
+   The subscriber shows `online`. Note the **process ID** the publisher prints.
+
+3. **Clean stop:** press `Ctrl + C` in the publisher window. The script
+   publishes `offline (clean stop)` itself and disconnects properly, so the
+   broker **throws the will away**.
+
+4. Start the publisher again, then stop it **without** a clean disconnect,
+   as if it had crashed. In a new Terminal:
+
+   ```bash
+   kill -9 <process ID>
+   ```
+
+   or press `Ctrl + \` in the publisher window, which ends Python immediately
+   without running its clean-up code.
+
+   The subscriber now shows `offline (connection lost)`: the broker published
+   the will.
+
+> **Important:** `Ctrl + C` does **not** trigger the will in these scripts,
+> because they catch it and disconnect cleanly. To test a will, the client
+> must disappear without disconnecting.
+
+Watch the broker window as well: it logs `Will message specified` when the
+publisher connects, and what happens to the will when it goes away.
+
+---
+
+## 15. Protecting the broker: usernames, passwords and an ACL
+
+So far, anyone who can reach port 1883 can read and send any message. In this
+section, the broker refuses clients that do not log in, and an **access
+control list (ACL)** decides which topics each user may use.
+
+Stop the broker from section 7 (`Ctrl + C` in its window) before you start.
+
+### 15.1 Create a password file
+
+From the **project folder**, create the file `mosquitto/passwd` with one user
+called `alice`. You will be asked to type her password twice:
+
+```bash
+mosquitto_passwd -c mosquitto/passwd alice
+```
+
+- `-c` **creates** the file, replacing any existing one. To add more users
+  later, run the command again **without** `-c`.
+- Open `mosquitto/passwd` (for example with `cat mosquitto/passwd`): the
+  password is stored as a hash, not as plain text.
+- `mosquitto/passwd` is listed in `.gitignore`, so it is not committed to Git.
+
+Mosquitto warns when these files can be read by other users on your Mac. Make
+them private to you:
+
+```bash
+chmod 600 mosquitto/passwd mosquitto/acl
+```
+
+### 15.2 Look at the ACL and the secure configuration
+
+`mosquitto/mosquitto_secure.conf` contains:
+
+```conf
+listener 1883
+allow_anonymous false
+password_file mosquitto/passwd
+acl_file mosquitto/acl
+```
+
+`mosquitto/acl` gives `alice` read and write access to every topic under
+`test/`:
+
+```conf
+user alice
+topic readwrite test/#
+```
+
+`topic read` allows subscribing, `topic write` allows publishing and
+`topic readwrite` allows both. Anything the ACL does not allow is denied.
+The comments in `mosquitto/acl` explain the format.
+
+### 15.3 Start the secure broker and log in
+
+Start the broker with the secure configuration, from the project folder:
+
+```bash
+mosquitto -c mosquitto/mosquitto_secure.conf -v
+```
+
+Now run `python src/subscriber.py`. Because it does not log in yet, you see:
+
+```text
+[SUBSCRIBER] Connection refused: Not authorized
+```
+
+Open `src/mqtt_settings.py` and set the user you created:
+
+```python
+USERNAME = "alice"
+PASSWORD = "the password you typed"
+```
+
+Every script reads these settings, so sections 8-14 now work again, as `alice`.
+
+### 15.4 See the ACL at work
+
+Publish to a topic **outside** `test/`:
+
+```bash
+mosquitto_pub -u alice -P <password> -t other/topic -m hello -q 1
+```
+
+The command appears to succeed, but the broker window shows
+`Denied PUBLISH ... 'other/topic'`. The message was dropped. MQTT 3.1.1 has
+no way to tell the client, so the broker log is the place to check.
+
+> **Note:** the connection is still **not encrypted**. Usernames, passwords
+> and messages cross the network as plain text.
+
+---
+
+## 16. Troubleshooting
+
+### 16.1 `ModuleNotFoundError: No module named 'paho'`
+
+- Make sure your **virtual environment is activated** (`(.venv)` visible in the prompt).
+- Run `pip install -r requirements.txt`.
+
+If `pip` answers `error: externally-managed-environment`, the virtual
+environment is **not** active: Homebrew's Python refuses to install packages
+outside one. Activate it (section 3.2) and try again.
+
+### 16.2 The broker does not start, or the scripts cannot connect
+
+- Is the broker window open and showing `running`, with no errors?
+- Did you start the broker **from the project folder**? The configuration
+  files use paths such as `mosquitto/passwd` that are relative to the folder
+  you start the broker in.
+- `Error: Unable to open pwfile` means the password file is missing or the
+  broker was started from another folder (section 15.1).
+- `command not found: mosquitto`: Homebrew installs the broker in its `sbin`
+  folder, which is not always on your `PATH`. Run it with its full path:
+
+  ```bash
+  $(brew --prefix)/sbin/mosquitto -c mosquitto/mosquitto.conf -v
+  ```
+
+  If `brew` itself is not found, you skipped the "Next steps" at the end of
+  the Homebrew installation (section 1.1).
+
+### 16.3 Port 1883 already in use
+
+Another broker is already using port 1883. You will see:
+
+```text
+Error: Address already in use
+```
+
+Most often this is a Mosquitto started by Homebrew in the background. Check:
+
+```bash
+brew services list
+```
+
+If `mosquitto` shows `started`, stop it (it will not start again on its own):
+
+```bash
+brew services stop mosquitto
+```
+
+If that is not it, find what is using the port:
+
+```bash
+lsof -nP -iTCP:1883 -sTCP:LISTEN
+```
+
+This could also be a `mosquitto` you started earlier in another Terminal
+window and forgot about.
+
+Alternatively, change `listener 1883` to `listener 1884` in the configuration
+file and set `BROKER_PORT = 1884` in `src/mqtt_settings.py`.
+
+### 16.4 `Connection refused: Not authorized`
+
+The broker requires a login (you are using `mosquitto_secure.conf`):
+
+- Set `USERNAME` and `PASSWORD` in `src/mqtt_settings.py` (section 15.3).
+- Check that the password is the one you typed for `mosquitto_passwd`.
+
+### 16.5 A script keeps reconnecting, or messages go missing
+
+Two running copies of the same script use the same **client ID**. The broker
+allows only one connection per client ID, so each copy keeps disconnecting the
+other (the broker window shows `already connected, closing old connection`).
+Close the extra copy.
+
+### 16.6 `DeprecationWarning: Callback API version 1 is deprecated`
+
+Your own code creates the client the old way. Use:
+
+```python
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="...")
+```
+
+and the new callback arguments shown in the example scripts.
+
+---
+
+## 17. Using Ubuntu
+
+Everything works the same way, apart from installation and the broker's
+background service. For Windows, use the
+[Windows version of this tutorial](https://github.com/captain-bender/mqtt-basics-windows-tutorial).
+
+| | macOS | Ubuntu |
+|---|---|---|
+| Install | `brew install mosquitto` | `sudo apt install mosquitto mosquitto-clients` |
+| Stop the broker the installer started | `brew services stop mosquitto` (only if you started it) | `sudo systemctl stop mosquitto` |
+| Start the tutorial broker (from the project folder) | `mosquitto -c mosquitto/mosquitto.conf -v` | same |
+| Create the password file | `mosquitto_passwd -c mosquitto/passwd alice` | same |
+| Activate the venv | `source .venv/bin/activate` | same |
+| Kill a script ungracefully (section 14) | `kill -9 <process ID>` | same |
+
+- On Ubuntu, the installer **starts Mosquitto as a service automatically**,
+  so port 1883 is taken until you stop it. To stop it starting at boot too:
+  `sudo systemctl disable mosquitto`.
+- Start the broker as your normal user, **not** with `sudo`. A broker started
+  as root switches to the `mosquitto` user, which cannot read files in your
+  home folder.
