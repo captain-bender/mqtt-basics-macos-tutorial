@@ -90,3 +90,6 @@ mosquitto/logs/
 
 # OneDrive temporary files
 ~$*
+
+# Password file created by mosquitto_passwd (README section 15). Never commit it.
+mosquitto/passwd
